@@ -1,7 +1,7 @@
 # MacroDefenseNATOEU
 Repository of the research project on the joint dynamics of military expenditure and macroeconomic indicators for European-NATO countries (1960-2023).
 * Project leader: prof. Mario Pianta (Scuola Normale Superiore, Firenze, Italy)
-* Project members: Dr. Paolo Maranzano (University of Milano-Bicocca, Milano, Italy), Dr. Marco Stamegna (Scuola Normale Superiore, Firenze, Italy) and Mrs. Sara Mombelli (Spienza University of Rome, Roma, Italy)
+* Project members: [Dr. Paolo Maranzano](https://www.paolomaranzano.net/home) (University of Milano-Bicocca, Milano, Italy), Dr. Marco Stamegna (Scuola Normale Superiore, Firenze, Italy) and Mrs. Sara Mombelli (Spienza University of Rome, Roma, Italy)
 
 Scientific reference and further readings:
 1. Greenpeace Italia, Spagna e Germania & Sbilanciamoci.info. Arming Europe: military expenditure and their economic impact in Germany, Italy and Spain. Nov.2023 (https://www.greenpeace.org/italy/rapporto/19382/leuropa-si-arma/)
