@@ -1,0 +1,2664 @@
+-------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  <ROOT>/output/stata/SCED_replication_log.txt
+  log type:  text
+ opened on:  29 Sep 2026, 08:55:28
+
+. 
+. 
+. *----------------------------------------------------------------------------
+> --
+. * 1. DATA
+. *----------------------------------------------------------------------------
+> --
+. use "data/dataset_paperSCED.dta", clear
+
+. 
+. * Panel structure: one row per country and year.
+. * encode sorts countries alphabetically: DE=1, ES=2, FR=3, IT=4, UK=5.
+. encode country, gen(pid)
+
+. xtset pid year
+
+Panel variable: pid (strongly balanced)
+ Time variable: year, 1981 to 2024
+         Delta: 1 unit
+
+. 
+. * Country groups
+. gen str4 block = cond(inlist(country, "FR", "UK"), "FRUK", "GIS")
+
+. 
+. * Country fixed effects, written as explicit dummy variables.
+. * The first country of each group (alphabetical) is the base category:
+. * France in FRUK and Germany in GIS. Their intercept is the "Constant".
+. gen byte FE_UK = country == "UK"
+
+. gen byte FE_ES = country == "ES"
+
+. gen byte FE_IT = country == "IT"
+
+. 
+. tempfile fulldata
+
+. save `fulldata'
+file <TEMP>\ST_2724_000001.tmp saved as .dta
+    format
+
+. 
+. 
+. *----------------------------------------------------------------------------
+> --
+. * 2. MODEL SET-UP
+. *----------------------------------------------------------------------------
+> --
+. local y       Log_MProductiv
+
+. local core    Exportman_GDP Importman_GDP MInvGDP     // trade and investment
+
+. local crisis  D0910 D20                               // crisis dummies
+
+. 
+. * Extra controls of the three specifications (table columns 1-3)
+. local extra1  Log_CivGBARD
+
+. local extra2  Log_DefGBARD
+
+. local extra3  Log_CivGBARD Log_DefGBARD
+
+. 
+. * Country dummies used by the fixed-effects model in each group
+. local fe_FRUK FE_UK
+
+. local fe_GIS  FE_ES FE_IT
+
+. 
+. * Row labels of the tables
+. local lab_DefGDP                      "Military expenditure / GDP"
+
+. local lab_DefInd                      "Military VA / manufacturing VA"
+
+. local lab_Exportman_GDP               "Manufacturing exports / GDP"
+
+. local lab_Importman_GDP               "Manufacturing imports / GDP"
+
+. local lab_MInvGDP                     "Manufacturing investment / GDP"
+
+. local lab_Log_CivGBARD                "Civilian government R&D (log)"
+
+. local lab_Log_DefGBARD                "Military government R&D (log)"
+
+. local lab_D0910                       "Crisis indicator: 2009-2010"
+
+. local lab_D20                         "Crisis indicator: 2020-2021"
+
+. local lab__cons                       "Constant"
+
+. 
+. 
+. *----------------------------------------------------------------------------
+> --
+. * 3. ESTIMATION: 2 military variables x 3 specifications x 2 groups x 2 model
+> s
+. *----------------------------------------------------------------------------
+> --
+. * What xtpcse, correlation(ar1) does, step by step
+. * (the R script codes the same steps explicitly):
+. *   Step 1. OLS of y on the regressors; keep the residuals e(it).
+. *   Step 2. For each country i: rho_i = sum_t e(it)e(i,t-1) / sum_t e(i,t-1)^
+> 2.
+. *           Common rho of the group = average of the rho_i, weighted by the
+. *           number of pairs of consecutive years of each country (T_i - 1).
+. *   Step 3. Prais-Winsten transformation of y and of every regressor
+. *           (constant and country dummies included), country by country:
+. *             first year  : z*(i1) = sqrt(1-rho^2) * z(i1)
+. *             other years : z*(it) = z(it) - rho * z(i,t-1)
+. *   Step 4. OLS on the transformed data = Prais-Winsten coefficients.
+. *   Step 5. Panel-corrected standard errors (PCSE):
+. *           Sigma = covariance matrix of the transformed residuals between
+. *                   countries, computed on the years common to all the
+. *                   countries of the group (option casewise, the default);
+. *           V = inverse(X*'X*) * [sum over years of X*_t' Sigma X*_t] *
+. *               inverse(X*'X*),
+. *           where X*_t are the rows of year t. Tests use the normal distribut
+> ion.
+. 
+. tempfile coefs resids
+
+. tempname P
+
+. postfile `P' str32 model str6 military byte table str4 block byte spec ///
+>     str10 method str32 term double(b se z p) int(N years) double(R2 rho) ///
+>     using `coefs', replace
+(file <TEMP>\ST_2724_000002.tmp not found)
+
+. 
+. * Empty file to which the residuals of every model are appended
+. clear
+
+. gen str32 model = ""
+
+. save `resids', emptyok
+(dataset contains 0 observations)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+
+. 
+. foreach mil in DefGDP DefInd {
+  2.     local table = cond("`mil'" == "DefGDP", 2, 3)
+  3. 
+.     forvalues s = 1/3 {
+  4.         foreach blk in FRUK GIS {
+  5.             foreach method in FE_AR1 POOLED_AR1 {
+  6. 
+.                 * (a) Sample: countries of the group, complete observations o
+> nly
+.                 use `fulldata', clear
+  7.                 keep if block == "`blk'"
+  8.                 local x `mil' `core' `extra`s'' `crisis'
+  9.                 egen nmiss = rowmiss(`y' `x')
+ 10.                 keep if nmiss == 0
+ 11.                 * Years must be consecutive within each country (AR(1) lag
+> s)
+.                 bysort pid (year): assert year == year[_n-1] + 1 if _n > 1
+ 12.                 quietly summarize year
+ 13.                 local years = r(max) - r(min) + 1
+ 14. 
+.                 * (b) Regressors: the FE model adds the country dummies
+.                 local rhs `x'
+ 15.                 if "`method'" == "FE_AR1" local rhs `x' `fe_`blk''
+ 16. 
+.                 * (c) Estimation
+.                 local model "`mil'_s`s'_`blk'_`method'"
+ 17.                 display as text _n(2) "=========  `model'  ========="
+ 18.                 xtpcse `y' `rhs', correlation(ar1)
+ 19.                 local rho = real("`e(rho)'")
+ 20. 
+.                 * (d) Fitted values, residuals and AR(1) innovations,
+.                 *     all on the original (untransformed) scale:
+.                 *       residual   u(it)   = y(it) - fitted(it)
+.                 *       innovation eps(it) = u(it) - rho * u(i,t-1)
+.                 *     The innovation is missing in the first year of a countr
+> y.
+.                 predict double fitted, xb
+ 21.                 gen double resid_raw   = `y' - fitted
+ 22.                 gen double resid_innov = resid_raw - `rho' * L.resid_raw
+ 23. 
+.                 * (e) Descriptive R-squared on the original scale of y
+.                 gen double sq_resid = resid_raw^2
+ 24.                 quietly summarize sq_resid
+ 25.                 scalar SSE = r(sum)
+ 26.                 quietly summarize `y'
+ 27.                 scalar SST = r(Var) * (r(N) - 1)
+ 28.                 scalar R2  = 1 - SSE / SST
+ 29. 
+.                 * (f) Store every coefficient with SE, z and two-sided p-valu
+> e
+.                 matrix B = e(b)
+ 30.                 matrix V = e(V)
+ 31.                 local terms : colnames B
+ 32.                 local k = 0
+ 33.                 foreach t of local terms {
+ 34.                     local ++k
+ 35.                     scalar coef = B[1, `k']
+ 36.                     scalar stderr = sqrt(V[`k', `k'])
+ 37.                     post `P' ("`model'") ("`mil'") (`table') ("`blk'") (`s
+> ') ///
+>                         ("`method'") ("`t'") (coef) (stderr) (coef/stderr)  /
+> //
+>                         (2*normal(-abs(coef/stderr))) (e(N)) (`years')      /
+> //
+>                         (R2) (`rho')
+ 38.                 }
+ 39. 
+.                 * (g) Append the residuals of this model to the residual file
+.                 gen str32 model    = "`model'"
+ 40.                 gen str6  military = "`mil'"
+ 41.                 gen byte  spec     = `s'
+ 42.                 gen str10 method   = "`method'"
+ 43.                 keep model military block spec method country year ///
+>                      fitted resid_raw resid_innov
+ 44.                 append using `resids'
+ 45.                 save `resids', replace
+ 46.             }
+ 47.         }
+ 48.     }
+ 49. }
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefGDP_s1_FRUK_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9958
+Estimated autocorrelations =         1          Wald chi2(8)      =     484.62
+Estimated coefficients     =         9          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.1942356   .0170558   -11.39   0.000    -.2276644   -.1608068
+Exportman_~P |   .0042636   .0053885     0.79   0.429    -.0062977    .0148249
+Importman_~P |  -.0054198   .0049272    -1.10   0.271     -.015077    .0042373
+     MInvGDP |  -.0279252   .0211682    -1.32   0.187    -.0694142    .0135638
+Log_CivGBARD |    .302143   .0595302     5.08   0.000      .185466    .4188201
+       D0910 |  -.0341975   .0247037    -1.38   0.166    -.0826159    .0142209
+         D20 |  -.0389855   .0230838    -1.69   0.091    -.0842289    .0062579
+       FE_UK |   .1878655   .0371922     5.05   0.000     .1149701    .2607608
+       _cons |   8.950157   .6198697    14.44   0.000     7.735235    10.16508
+-------------+----------------------------------------------------------------
+         rho |   .6151543
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefGDP_s1_FRUK_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9959
+Estimated autocorrelations =         1          Wald chi2(7)      =     151.99
+Estimated coefficients     =         8          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.1978403   .0222404    -8.90   0.000    -.2414307   -.1542498
+Exportman_~P |  -.0080331   .0055751    -1.44   0.150    -.0189601    .0028939
+Importman_~P |  -.0005515   .0058569    -0.09   0.925    -.0120308    .0109278
+     MInvGDP |  -.0399482   .0202026    -1.98   0.048    -.0795445   -.0003518
+Log_CivGBARD |   .1200121   .0617892     1.94   0.052    -.0010925    .2411166
+       D0910 |   -.047923    .025591    -1.87   0.061    -.0980805    .0022344
+         D20 |  -.0429293   .0228018    -1.88   0.060    -.0876199    .0017614
+       _cons |   10.85615   .6207368    17.49   0.000     9.639527    12.07277
+-------------+----------------------------------------------------------------
+         rho |   .7860526
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(14 observations deleted)
+
+
+=========  DefGDP_s1_GIS_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        118
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  39.333333
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9975
+Estimated autocorrelations =         1          Wald chi2(9)      =     121.06
+Estimated coefficients     =        10          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.0664817   .0281806    -2.36   0.018    -.1217146   -.0112488
+Exportman_~P |   .0156198   .0027756     5.63   0.000     .0101798    .0210599
+Importman_~P |  -.0081766    .003048    -2.68   0.007    -.0141506   -.0022027
+     MInvGDP |   .0153242   .0131409     1.17   0.244    -.0104315    .0410799
+Log_CivGBARD |   .0473113   .0287964     1.64   0.100    -.0091285    .1037512
+       D0910 |  -.0309235   .0219083    -1.41   0.158    -.0738629     .012016
+         D20 |  -.0168724   .0191148    -0.88   0.377    -.0543367    .0205919
+       FE_ES |  -.0631325   .0671772    -0.94   0.347    -.1947974    .0685325
+       FE_IT |  -.0674302   .0395656    -1.70   0.088    -.1449774    .0101169
+       _cons |   10.63092   .3115979    34.12   0.000      10.0202    11.24164
+-------------+----------------------------------------------------------------
+         rho |   .8217568
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(14 observations deleted)
+
+
+=========  DefGDP_s1_GIS_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        118
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  39.333333
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9974
+Estimated autocorrelations =         1          Wald chi2(7)      =     114.44
+Estimated coefficients     =         8          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.0663664   .0266176    -2.49   0.013     -.118536   -.0141969
+Exportman_~P |   .0155779   .0026983     5.77   0.000     .0102892    .0208666
+Importman_~P |  -.0084215   .0029251    -2.88   0.004    -.0141547   -.0026883
+     MInvGDP |   .0171161    .011822     1.45   0.148    -.0060546    .0402868
+Log_CivGBARD |   .0710418   .0200852     3.54   0.000     .0316756     .110408
+       D0910 |  -.0327607   .0216715    -1.51   0.131     -.075236    .0097146
+         D20 |  -.0179245   .0188913    -0.95   0.343    -.0549507    .0191017
+       _cons |   10.36428   .1681797    61.63   0.000     10.03465     10.6939
+-------------+----------------------------------------------------------------
+         rho |   .8241269
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefGDP_s2_FRUK_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9960
+Estimated autocorrelations =         1          Wald chi2(8)      =     122.56
+Estimated coefficients     =         9          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.1893311   .0256304    -7.39   0.000    -.2395657   -.1390966
+Exportman_~P |   .0009166    .005804     0.16   0.875    -.0104591    .0122922
+Importman_~P |   -.005342   .0058556    -0.91   0.362    -.0168187    .0061346
+     MInvGDP |  -.0298702   .0208962    -1.43   0.153     -.070826    .0110856
+Log_DefGBARD |  -.0535591   .0267304    -2.00   0.045    -.1059498   -.0011685
+       D0910 |  -.0313207   .0277879    -1.13   0.260     -.085784    .0231425
+         D20 |  -.0329464   .0234392    -1.41   0.160    -.0788863    .0129936
+       FE_UK |   .1056596   .0451381     2.34   0.019     .0171906    .1941285
+       _cons |   12.29632   .2048027    60.04   0.000     11.89491    12.69772
+-------------+----------------------------------------------------------------
+         rho |    .818481
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefGDP_s2_FRUK_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9959
+Estimated autocorrelations =         1          Wald chi2(7)      =     121.30
+Estimated coefficients     =         8          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.1894743   .0251946    -7.52   0.000    -.2388548   -.1400937
+Exportman_~P |  -.0067797   .0054798    -1.24   0.216    -.0175199    .0039605
+Importman_~P |  -.0015014   .0059654    -0.25   0.801    -.0131934    .0101907
+     MInvGDP |  -.0375495   .0203068    -1.85   0.064    -.0773501    .0022511
+Log_DefGBARD |  -.0495184    .027137    -1.82   0.068     -.102706    .0036692
+       D0910 |  -.0374495   .0278612    -1.34   0.179    -.0920564    .0171574
+         D20 |  -.0381608   .0236038    -1.62   0.106    -.0844235    .0081018
+       _cons |   12.36369    .206933    59.75   0.000     11.95811    12.76927
+-------------+----------------------------------------------------------------
+         rho |   .8087141
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(14 observations deleted)
+
+
+=========  DefGDP_s2_GIS_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        118
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  39.333333
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9975
+Estimated autocorrelations =         1          Wald chi2(9)      =     130.16
+Estimated coefficients     =        10          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.0727947   .0276309    -2.63   0.008    -.1269503   -.0186391
+Exportman_~P |   .0164942    .002749     6.00   0.000     .0111062    .0218822
+Importman_~P |  -.0085776    .003049    -2.81   0.005    -.0145534   -.0026017
+     MInvGDP |   .0138328   .0132077     1.05   0.295    -.0120537    .0397193
+Log_DefGBARD |  -.0048251    .007011    -0.69   0.491    -.0185664    .0089162
+       D0910 |  -.0276182   .0218235    -1.27   0.206    -.0703915     .015155
+         D20 |  -.0145283   .0193668    -0.75   0.453    -.0524866      .02343
+       FE_ES |  -.1510708   .0468949    -3.22   0.001    -.2429831   -.0591586
+       FE_IT |  -.1191781   .0351903    -3.39   0.001    -.1881498   -.0502064
+       _cons |   11.15077    .107489   103.74   0.000     10.94009    11.36144
+-------------+----------------------------------------------------------------
+         rho |   .8094031
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(14 observations deleted)
+
+
+=========  DefGDP_s2_GIS_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        118
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  39.333333
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9969
+Estimated autocorrelations =         1          Wald chi2(7)      =      67.71
+Estimated coefficients     =         8          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.0659035   .0284427    -2.32   0.021    -.1216502   -.0101568
+Exportman_~P |   .0174887   .0026831     6.52   0.000       .01223    .0227474
+Importman_~P |  -.0093148   .0030729    -3.03   0.002    -.0153377    -.003292
+     MInvGDP |   .0243656   .0124045     1.96   0.050     .0000532     .048678
+Log_DefGBARD |   .0034755   .0065145     0.53   0.594    -.0092927    .0162438
+       D0910 |  -.0224329   .0214395    -1.05   0.295    -.0644536    .0195878
+         D20 |  -.0130862   .0188466    -0.69   0.487    -.0500248    .0238524
+       _cons |   10.94959   .0800696   136.75   0.000     10.79265    11.10652
+-------------+----------------------------------------------------------------
+         rho |   .8732671
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefGDP_s3_FRUK_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9959
+Estimated autocorrelations =         1          Wald chi2(9)      =     485.17
+Estimated coefficients     =        10          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |   -.185159   .0191406    -9.67   0.000    -.2226739   -.1476441
+Exportman_~P |   .0036933   .0054181     0.68   0.495    -.0069259    .0143125
+Importman_~P |   -.005469    .004992    -1.10   0.273    -.0152532    .0043151
+     MInvGDP |  -.0266748   .0208741    -1.28   0.201    -.0675873    .0142377
+Log_CivGBARD |   .2754723   .0611143     4.51   0.000     .1556904    .3952542
+Log_DefGBARD |  -.0275771   .0225116    -1.23   0.221    -.0716989    .0165448
+       D0910 |  -.0289363   .0254404    -1.14   0.255    -.0787985    .0209259
+         D20 |  -.0395542   .0231191    -1.71   0.087    -.0848668    .0057585
+       FE_UK |   .1818848   .0369957     4.92   0.000     .1093745    .2543951
+       _cons |   9.409397   .6881355    13.67   0.000     8.060677    10.75812
+-------------+----------------------------------------------------------------
+         rho |   .6190642
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefGDP_s3_FRUK_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9960
+Estimated autocorrelations =         1          Wald chi2(8)      =     161.23
+Estimated coefficients     =         9          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.1868998   .0241602    -7.74   0.000     -.234253   -.1395466
+Exportman_~P |  -.0084132   .0054899    -1.53   0.125    -.0191733    .0023469
+Importman_~P |  -.0003832    .005877    -0.07   0.948     -.011902    .0111355
+     MInvGDP |  -.0399148   .0199297    -2.00   0.045    -.0789764   -.0008533
+Log_CivGBARD |   .0897885   .0636509     1.41   0.158    -.0349651     .214542
+Log_DefGBARD |  -.0380377   .0275929    -1.38   0.168    -.0921187    .0160433
+       D0910 |  -.0396133   .0269199    -1.47   0.141    -.0923753    .0131487
+         D20 |  -.0418552   .0231617    -1.81   0.071    -.0872513     .003541
+       _cons |   11.42469   .7161827    15.95   0.000       10.021    12.82838
+-------------+----------------------------------------------------------------
+         rho |   .7814481
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(14 observations deleted)
+
+
+=========  DefGDP_s3_GIS_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        118
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  39.333333
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9976
+Estimated autocorrelations =         1          Wald chi2(10)     =     149.23
+Estimated coefficients     =        11          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.0646532   .0278154    -2.32   0.020    -.1191703    -.010136
+Exportman_~P |   .0157027   .0027048     5.81   0.000     .0104013    .0210041
+Importman_~P |  -.0085583   .0029661    -2.89   0.004    -.0143717   -.0027448
+     MInvGDP |   .0153185    .013183     1.16   0.245    -.0105197    .0411568
+Log_CivGBARD |   .0533481   .0281985     1.89   0.059      -.00192    .1086161
+Log_DefGBARD |  -.0071721    .007053    -1.02   0.309    -.0209957    .0066515
+       D0910 |  -.0339616   .0220824    -1.54   0.124    -.0772422    .0093191
+         D20 |  -.0185106   .0194999    -0.95   0.342    -.0567297    .0197085
+       FE_ES |  -.0681646   .0633769    -1.08   0.282     -.192381    .0560518
+       FE_IT |  -.0756124   .0380864    -1.99   0.047    -.1502603   -.0009644
+       _cons |   10.62578    .300428    35.37   0.000     10.03695    11.21461
+-------------+----------------------------------------------------------------
+         rho |   .7897028
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(14 observations deleted)
+
+
+=========  DefGDP_s3_GIS_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        118
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  39.333333
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9974
+Estimated autocorrelations =         1          Wald chi2(8)      =     113.57
+Estimated coefficients     =         9          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefGDP |  -.0663828   .0266159    -2.49   0.013     -.118549   -.0142166
+Exportman_~P |   .0154675   .0027201     5.69   0.000     .0101363    .0207987
+Importman_~P |  -.0084299   .0029184    -2.89   0.004    -.0141498     -.00271
+     MInvGDP |   .0176571   .0118496     1.49   0.136    -.0055678    .0408819
+Log_CivGBARD |   .0731778   .0215955     3.39   0.001     .0308515    .1155042
+Log_DefGBARD |  -.0025965   .0066438    -0.39   0.696    -.0156181     .010425
+       D0910 |  -.0335319   .0217634    -1.54   0.123    -.0761874    .0091236
+         D20 |   -.018741   .0190093    -0.99   0.324    -.0559985    .0185165
+       _cons |   10.36046   .1708209    60.65   0.000     10.02566    10.69526
+-------------+----------------------------------------------------------------
+         rho |   .8261379
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefInd_s1_FRUK_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9918
+Estimated autocorrelations =         1          Wald chi2(8)      =      91.46
+Estimated coefficients     =         9          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |   .0541532   .0152636     3.55   0.000     .0242371    .0840694
+Exportman_~P |   .0108253   .0084086     1.29   0.198    -.0056552    .0273059
+Importman_~P |   .0009628   .0087312     0.11   0.912    -.0161499    .0180756
+     MInvGDP |  -.0546914   .0308393    -1.77   0.076    -.1151352    .0057524
+Log_CivGBARD |   .5373606   .0843443     6.37   0.000     .3720489    .7026724
+       D0910 |  -.0049809   .0422244    -0.12   0.906    -.0877391    .0777774
+         D20 |  -.0558757   .0392524    -1.42   0.155    -.1328089    .0210576
+       FE_UK |   .2490862   .0547509     4.55   0.000     .1417764     .356396
+       _cons |   5.561904   .8585655     6.48   0.000     3.879147    7.244662
+-------------+----------------------------------------------------------------
+         rho |   .6948628
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefInd_s1_FRUK_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9918
+Estimated autocorrelations =         1          Wald chi2(7)      =      46.92
+Estimated coefficients     =         8          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |   .0463808   .0161671     2.87   0.004     .0146939    .0780678
+Exportman_~P |  -.0088454   .0075536    -1.17   0.242    -.0236503    .0059594
+Importman_~P |   .0087726   .0092123     0.95   0.341    -.0092831    .0268283
+     MInvGDP |  -.0701742   .0280401    -2.50   0.012    -.1251317   -.0152166
+Log_CivGBARD |    .348014   .0769129     4.52   0.000     .1972676    .4987605
+       D0910 |  -.0234931   .0422439    -0.56   0.578    -.1062896    .0593035
+         D20 |  -.0646066   .0385592    -1.68   0.094    -.1401812     .010968
+       _cons |   7.675066     .74932    10.24   0.000     6.206426    9.143706
+-------------+----------------------------------------------------------------
+         rho |   .7581304
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(10 observations deleted)
+
+
+=========  DefInd_s1_GIS_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        122
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  40.666667
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9974
+Estimated autocorrelations =         1          Wald chi2(9)      =     125.01
+Estimated coefficients     =        10          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |  -.0381012   .0159242    -2.39   0.017     -.069312   -.0068903
+Exportman_~P |    .016542   .0028075     5.89   0.000     .0110394    .0220445
+Importman_~P |  -.0083873   .0028898    -2.90   0.004    -.0140513   -.0027234
+     MInvGDP |   .0140421    .012575     1.12   0.264    -.0106045    .0386886
+Log_CivGBARD |   .0982009   .0254107     3.86   0.000      .048397    .1480049
+       D0910 |  -.0346811   .0221844    -1.56   0.118    -.0781617    .0087996
+         D20 |   -.023146   .0195783    -1.18   0.237    -.0615189    .0152268
+       FE_ES |   -.063251   .0673075    -0.94   0.347    -.1951712    .0686693
+       FE_IT |  -.0561766   .0366427    -1.53   0.125    -.1279951    .0156418
+       _cons |   10.30172   .2591966    39.74   0.000     9.793709    10.80974
+-------------+----------------------------------------------------------------
+         rho |   .8226274
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(10 observations deleted)
+
+
+=========  DefInd_s1_GIS_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        122
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  40.666667
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9973
+Estimated autocorrelations =         1          Wald chi2(7)      =     113.53
+Estimated coefficients     =         8          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |  -.0359425   .0142022    -2.53   0.011    -.0637783   -.0081067
+Exportman_~P |   .0164136   .0028012     5.86   0.000     .0109235    .0219038
+Importman_~P |  -.0084945   .0028433    -2.99   0.003    -.0140672   -.0029218
+     MInvGDP |    .016541   .0116102     1.42   0.154    -.0062145    .0392965
+Log_CivGBARD |   .1154441   .0233435     4.95   0.000     .0696917    .1611965
+       D0910 |  -.0356864    .021989    -1.62   0.105     -.078784    .0074111
+         D20 |  -.0241715   .0193242    -1.25   0.211    -.0620463    .0137032
+       _cons |   10.08131   .1657093    60.84   0.000      9.75653     10.4061
+-------------+----------------------------------------------------------------
+         rho |   .8351858
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefInd_s2_FRUK_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9926
+Estimated autocorrelations =         1          Wald chi2(8)      =      52.92
+Estimated coefficients     =         9          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |   .0313379   .0157003     2.00   0.046     .0005658      .06211
+Exportman_~P |   .0007495   .0082173     0.09   0.927    -.0153562    .0168552
+Importman_~P |    .000611    .008955     0.07   0.946    -.0169405    .0181625
+     MInvGDP |  -.0573128   .0285537    -2.01   0.045    -.1132771   -.0013486
+Log_DefGBARD |  -.1604701   .0347347    -4.62   0.000    -.2285488   -.0923914
+       D0910 |   .0085293    .042249     0.20   0.840    -.0742771    .0913358
+         D20 |  -.0441829   .0376479    -1.17   0.241    -.1179715    .0296057
+       FE_UK |   .0905373   .0475368     1.90   0.057    -.0026331    .1837077
+       _cons |   12.34534   .3861838    31.97   0.000     11.58844    13.10225
+-------------+----------------------------------------------------------------
+         rho |   .7775561
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefInd_s2_FRUK_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9923
+Estimated autocorrelations =         1          Wald chi2(7)      =      44.16
+Estimated coefficients     =         8          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |   .0292164   .0160259     1.82   0.068    -.0021938    .0606265
+Exportman_~P |  -.0066687   .0071038    -0.94   0.348     -.020592    .0072546
+Importman_~P |    .004263   .0090295     0.47   0.637    -.0134344    .0219604
+     MInvGDP |  -.0662491   .0274648    -2.41   0.016    -.1200791   -.0124191
+Log_DefGBARD |   -.157188   .0353298    -4.45   0.000    -.2264331    -.087943
+       D0910 |   .0021786     .04289     0.05   0.959    -.0818843    .0862414
+         D20 |  -.0493175   .0383176    -1.29   0.198    -.1244186    .0257836
+       _cons |   12.43327   .3894332    31.93   0.000        11.67    13.19655
+-------------+----------------------------------------------------------------
+         rho |   .7741063
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(10 observations deleted)
+
+
+=========  DefInd_s2_GIS_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        122
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  40.666667
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9972
+Estimated autocorrelations =         1          Wald chi2(9)      =     135.97
+Estimated coefficients     =        10          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |  -.0201238   .0162509    -1.24   0.216    -.0519749    .0117273
+Exportman_~P |   .0189869   .0028692     6.62   0.000     .0133635    .0246104
+Importman_~P |  -.0096694    .003101    -3.12   0.002    -.0157474   -.0035915
+     MInvGDP |   .0090303   .0133857     0.67   0.500    -.0172053    .0352658
+Log_DefGBARD |  -.0032284   .0071149    -0.45   0.650    -.0171735    .0107166
+       D0910 |  -.0263616   .0238055    -1.11   0.268    -.0730195    .0202963
+         D20 |  -.0169227   .0214203    -0.79   0.430    -.0589058    .0250604
+       FE_ES |  -.1883183   .0580766    -3.24   0.001    -.3021464   -.0744903
+       FE_IT |  -.1349066   .0344157    -3.92   0.000    -.2023603    -.067453
+       _cons |   11.16819   .1481739    75.37   0.000     10.87777     11.4586
+-------------+----------------------------------------------------------------
+         rho |   .8004453
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(10 observations deleted)
+
+
+=========  DefInd_s2_GIS_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        122
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  40.666667
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9969
+Estimated autocorrelations =         1          Wald chi2(7)      =      77.66
+Estimated coefficients     =         8          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |   .0011189   .0135302     0.08   0.934    -.0253999    .0276376
+Exportman_~P |   .0201553   .0029399     6.86   0.000     .0143932    .0259173
+Importman_~P |  -.0108722   .0032016    -3.40   0.001    -.0171472   -.0045973
+     MInvGDP |   .0193728   .0130368     1.49   0.137    -.0061789    .0449245
+Log_DefGBARD |   .0061028    .006838     0.89   0.372    -.0072994    .0195049
+       D0910 |  -.0218021   .0242264    -0.90   0.368     -.069285    .0256809
+         D20 |  -.0145861   .0216859    -0.67   0.501    -.0570896    .0279174
+       _cons |   10.81422   .0838837   128.92   0.000     10.64981    10.97863
+-------------+----------------------------------------------------------------
+         rho |   .8387031
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefInd_s3_FRUK_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9930
+Estimated autocorrelations =         1          Wald chi2(9)      =      97.21
+Estimated coefficients     =        10          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |   .0326761   .0157802     2.07   0.038     .0017475    .0636048
+Exportman_~P |   .0081978    .008108     1.01   0.312    -.0076936    .0240892
+Importman_~P |   -.000777   .0083778    -0.09   0.926    -.0171973    .0156432
+     MInvGDP |  -.0500777   .0285449    -1.75   0.079    -.1060248    .0058693
+Log_CivGBARD |   .3848735   .0872237     4.41   0.000     .2139182    .5558288
+Log_DefGBARD |  -.1076623   .0347147    -3.10   0.002    -.1757019   -.0396227
+       D0910 |   .0096253   .0402271     0.24   0.811    -.0692185     .088469
+         D20 |  -.0513356   .0367115    -1.40   0.162    -.1232889    .0206176
+       FE_UK |   .2111967    .053225     3.97   0.000     .1068775    .3155158
+       _cons |   8.143299     1.0749     7.58   0.000     6.036533    10.25006
+-------------+----------------------------------------------------------------
+         rho |   .7169406
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(132 observations deleted)
+(0 observations deleted)
+
+
+=========  DefInd_s3_FRUK_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =         88
+Time variable:    year                          Number of groups  =          2
+Panels:           correlated (balanced)         Obs per group:
+Autocorrelation:  common AR(1)                                min =         44
+                                                              avg =         44
+                                                              max =         44
+Estimated covariances      =         3          R-squared         =     0.9927
+Estimated autocorrelations =         1          Wald chi2(8)      =      55.92
+Estimated coefficients     =         9          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |   .0282624   .0159229     1.77   0.076    -.0029459    .0594707
+Exportman_~P |  -.0083529   .0070669    -1.18   0.237    -.0222038    .0054979
+Importman_~P |   .0062617   .0087575     0.72   0.475    -.0109027     .023426
+     MInvGDP |  -.0651087   .0263662    -2.47   0.014    -.1167854    -.013432
+Log_CivGBARD |   .2191142   .0771189     2.84   0.004      .067964    .3702644
+Log_DefGBARD |  -.1169137    .036182    -3.23   0.001    -.1878291   -.0459984
+       D0910 |  -.0035064    .040919    -0.09   0.932    -.0837062    .0766934
+         D20 |  -.0575198    .036783    -1.56   0.118    -.1296132    .0145736
+       _cons |   10.03764   .9371532    10.71   0.000     8.200851    11.87442
+-------------+----------------------------------------------------------------
+         rho |   .7631108
+------------------------------------------------------------------------------
+(2 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(10 observations deleted)
+
+
+=========  DefInd_s3_GIS_FE_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        122
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  40.666667
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9975
+Estimated autocorrelations =         1          Wald chi2(10)     =     174.87
+Estimated coefficients     =        11          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |  -.0393473   .0161092    -2.44   0.015    -.0709208   -.0077738
+Exportman_~P |   .0167652   .0026951     6.22   0.000     .0114829    .0220475
+Importman_~P |  -.0087609   .0027812    -3.15   0.002    -.0142119   -.0033099
+     MInvGDP |   .0132597   .0125596     1.06   0.291    -.0113566     .037876
+Log_CivGBARD |   .1092157   .0239551     4.56   0.000     .0622646    .1561669
+Log_DefGBARD |  -.0097275   .0068321    -1.42   0.155    -.0231182    .0036631
+       D0910 |  -.0379054   .0225886    -1.68   0.093    -.0821783    .0063675
+         D20 |  -.0246999   .0202578    -1.22   0.223    -.0644044    .0150046
+       FE_ES |  -.0677229   .0597649    -1.13   0.257    -.1848599    .0494141
+       FE_IT |  -.0672683   .0328775    -2.05   0.041     -.131707   -.0028297
+       _cons |   10.28055   .2323785    44.24   0.000     9.825093      10.736
+-------------+----------------------------------------------------------------
+         rho |   .7673898
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+(88 observations deleted)
+(10 observations deleted)
+
+
+=========  DefInd_s3_GIS_POOLED_AR1  =========
+
+Prais–Winsten regression, correlated panels corrected standard errors (PCSEs)
+
+Group variable:   pid                           Number of obs     =        122
+Time variable:    year                          Number of groups  =          3
+Panels:           correlated (unbalanced)       Obs per group:
+Autocorrelation:  common AR(1)                                min =         34
+Sigma computed by casewise selection                          avg =  40.666667
+                                                              max =         44
+Estimated covariances      =         6          R-squared         =     0.9973
+Estimated autocorrelations =         1          Wald chi2(8)      =     117.48
+Estimated coefficients     =         9          Prob > chi2       =     0.0000
+
+------------------------------------------------------------------------------
+             |           Panel-corrected
+Log_MProdu~v | Coefficient  std. err.      z    P>|z|     [95% conf. interval]
+-------------+----------------------------------------------------------------
+      DefInd |  -.0364354   .0141258    -2.58   0.010    -.0641213   -.0087494
+Exportman_~P |   .0163409   .0028032     5.83   0.000     .0108468    .0218351
+Importman_~P |  -.0085593   .0028174    -3.04   0.002    -.0140813   -.0030373
+     MInvGDP |   .0169664   .0115473     1.47   0.142    -.0056658    .0395987
+Log_CivGBARD |   .1197356   .0244683     4.89   0.000     .0717785    .1676926
+Log_DefGBARD |    -.00354   .0065153    -0.54   0.587    -.0163097    .0092297
+       D0910 |  -.0368664   .0220934    -1.67   0.095    -.0801687     .006436
+         D20 |  -.0251739    .019463    -1.29   0.196    -.0633207    .0129729
+       _cons |   10.06762   .1660277    60.64   0.000     9.742209    10.39303
+-------------+----------------------------------------------------------------
+         rho |   .8310867
+------------------------------------------------------------------------------
+(3 missing values generated)
+file <TEMP>\ST_2724_000003.tmp saved as .dta
+    format
+
+. postclose `P'
+
+. 
+. * Save all estimates
+. use `coefs', clear
+
+. sort table method block spec, stable
+
+. export delimited using "$OUT/estimates_long.csv", replace
+file output/stata/estimates_long.csv saved
+
+. 
+. 
+. *----------------------------------------------------------------------------
+> --
+. * 4. FORMATTED TABLES 2 AND 3
+. *----------------------------------------------------------------------------
+> --
+. * Layout: one column per group and specification (FRUK_1 ... GIS_5);
+. * coefficient with stars on one row, standard error in parentheses below.
+. * *** p<0.01, ** p<0.05, * p<0.10.
+. * The constant is shown only in the pooled tables (see the header).
+. 
+. local rowterms `core' Log_CivGBARD Log_DefGBARD `crisis'
+
+. 
+. foreach table in 2 3 {
+  2.     local mil = cond(`table' == 2, "DefGDP", "DefInd")
+  3. 
+.     foreach method in FE_AR1 POOLED_AR1 {
+  4. 
+.         local shown `mil' `rowterms'
+  5.         if "`method'" == "POOLED_AR1" local shown `shown' _cons
+  6. 
+.         * (a) Coefficient rows
+.         use `coefs', clear
+  7.         keep if table == `table' & method == "`method'"
+  8.         gen row = .
+  9.         gen str40 variable = ""
+ 10.         local r = 0
+ 11.         foreach v of local shown {
+ 12.             local ++r
+ 13.             replace row = `r' if term == "`v'"
+ 14.             replace variable = "`lab_`v''" if term == "`v'"
+ 15.         }
+ 16.         drop if missing(row)          // intercepts of the FE model not di
+> splayed
+ 17.         gen str3 stars = cond(p < .01, "***", cond(p < .05, "**", ///
+>                          cond(p < .10, "*", "")))
+ 18.         gen str20 cell1 = strtrim(string(b, "%9.4f")) + stars
+ 19.         gen str20 cell2 = "(" + strtrim(string(se, "%9.4f")) + ")"
+ 20.         keep row variable block spec cell1 cell2
+ 21.         reshape long cell, i(row block spec) j(line)
+ 22.         gen order = 2*row - 2 + line   // coefficient, then its SE
+ 23.         replace variable = "" if line == 2
+ 24.         keep order variable block spec cell
+ 25.         tempfile part1
+ 26.         save `part1'
+ 27. 
+.         * (b) Statistics rows (one value per model)
+.         use `coefs', clear
+ 28.         keep if table == `table' & method == "`method'" & term == "_cons"
+ 29.         gen str20 cell1 = strtrim(string(N, "%9.0f"))
+ 30.         gen str20 cell2 = strtrim(string(years, "%9.0f"))
+ 31.         gen str20 cell3 = strtrim(string(R2, "%9.3f"))
+ 32.         gen str20 cell4 = strtrim(string(rho, "%9.3f"))
+ 33.         gen str20 cell5 = cond(method == "FE_AR1", "Yes", "No")
+ 34.         keep block spec cell1-cell5
+ 35.         reshape long cell, i(block spec) j(stat)
+ 36.         gen order = 100 + stat
+ 37.         gen str40 variable = ""
+ 38.         replace variable = "Observations"               if stat == 1
+ 39.         replace variable = "Calendar years"             if stat == 2
+ 40.         replace variable = "R-squared (original scale)" if stat == 3
+ 41.         replace variable = "rho (common AR(1))"         if stat == 4
+ 42.         replace variable = "Country fixed effects"      if stat == 5
+ 43.         keep order variable block spec cell
+ 44. 
+.         * (c) One column per group x specification, then export
+.         append using `part1'
+ 45.         gen str8 column = block + "_" + string(spec)
+ 46.         drop block spec
+ 47.         reshape wide cell, i(order) j(column) string
+ 48.         rename cell* *
+ 49.         sort order
+ 50.         drop order
+ 51.         order variable
+ 52.         export delimited using "$OUT/Table`table'_`method'.csv", replace
+ 53.     }
+ 54. }
+(159 observations deleted)
+(59 missing values generated)
+(59 missing values generated)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(4 real changes made)
+(4 real changes made)
+(4 real changes made)
+(4 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(15 observations deleted)
+(26 missing values generated)
+(j = 1 2)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations               44   ->   88          
+Number of variables                   6   ->   6           
+j variable (2 values)                     ->   line
+xij variables:
+                            cell1 cell2   ->   cell
+-----------------------------------------------------------------------------
+(44 real changes made)
+file <TEMP>\ST_2724_000004.tmp saved as .dta
+    format
+(212 observations deleted)
+(j = 1 2 3 4 5)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations                6   ->   30          
+Number of variables                   7   ->   4           
+j variable (5 values)                     ->   stat
+xij variables:
+                  cell1 cell2 ... cell5   ->   cell
+-----------------------------------------------------------------------------
+(30 missing values generated)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(j = FRUK_1 FRUK_2 FRUK_3 GIS_1 GIS_2 GIS_3)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              118   ->   21          
+Number of variables                   4   ->   8           
+j variable (6 values)            column   ->   (dropped)
+xij variables:
+                                   cell   ->   cellFRUK_1 cellFRUK_2 ... cellGI
+> S_3
+-----------------------------------------------------------------------------
+file output/stata/Table2_FE_AR1.csv saved
+(168 observations deleted)
+(50 missing values generated)
+(50 missing values generated)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(4 real changes made)
+(4 real changes made)
+(4 real changes made)
+(4 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(0 observations deleted)
+(21 missing values generated)
+(j = 1 2)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations               50   ->   100         
+Number of variables                   6   ->   6           
+j variable (2 values)                     ->   line
+xij variables:
+                            cell1 cell2   ->   cell
+-----------------------------------------------------------------------------
+(50 real changes made)
+file <TEMP>\ST_2724_000005.tmp saved as .dta
+    format
+(212 observations deleted)
+(j = 1 2 3 4 5)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations                6   ->   30          
+Number of variables                   7   ->   4           
+j variable (5 values)                     ->   stat
+xij variables:
+                  cell1 cell2 ... cell5   ->   cell
+-----------------------------------------------------------------------------
+(30 missing values generated)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(j = FRUK_1 FRUK_2 FRUK_3 GIS_1 GIS_2 GIS_3)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              130   ->   23          
+Number of variables                   4   ->   8           
+j variable (6 values)            column   ->   (dropped)
+xij variables:
+                                   cell   ->   cellFRUK_1 cellFRUK_2 ... cellGI
+> S_3
+-----------------------------------------------------------------------------
+file output/stata/Table2_POOLED_AR1.csv saved
+(159 observations deleted)
+(59 missing values generated)
+(59 missing values generated)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(4 real changes made)
+(4 real changes made)
+(4 real changes made)
+(4 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(15 observations deleted)
+(23 missing values generated)
+(j = 1 2)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations               44   ->   88          
+Number of variables                   6   ->   6           
+j variable (2 values)                     ->   line
+xij variables:
+                            cell1 cell2   ->   cell
+-----------------------------------------------------------------------------
+(44 real changes made)
+file <TEMP>\ST_2724_000006.tmp saved as .dta
+    format
+(212 observations deleted)
+(j = 1 2 3 4 5)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations                6   ->   30          
+Number of variables                   7   ->   4           
+j variable (5 values)                     ->   stat
+xij variables:
+                  cell1 cell2 ... cell5   ->   cell
+-----------------------------------------------------------------------------
+(30 missing values generated)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(j = FRUK_1 FRUK_2 FRUK_3 GIS_1 GIS_2 GIS_3)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              118   ->   21          
+Number of variables                   4   ->   8           
+j variable (6 values)            column   ->   (dropped)
+xij variables:
+                                   cell   ->   cellFRUK_1 cellFRUK_2 ... cellGI
+> S_3
+-----------------------------------------------------------------------------
+file output/stata/Table3_FE_AR1.csv saved
+(168 observations deleted)
+(50 missing values generated)
+(50 missing values generated)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(4 real changes made)
+(4 real changes made)
+(4 real changes made)
+(4 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(0 observations deleted)
+(22 missing values generated)
+(j = 1 2)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations               50   ->   100         
+Number of variables                   6   ->   6           
+j variable (2 values)                     ->   line
+xij variables:
+                            cell1 cell2   ->   cell
+-----------------------------------------------------------------------------
+(50 real changes made)
+file <TEMP>\ST_2724_000007.tmp saved as .dta
+    format
+(212 observations deleted)
+(j = 1 2 3 4 5)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations                6   ->   30          
+Number of variables                   7   ->   4           
+j variable (5 values)                     ->   stat
+xij variables:
+                  cell1 cell2 ... cell5   ->   cell
+-----------------------------------------------------------------------------
+(30 missing values generated)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(6 real changes made)
+(j = FRUK_1 FRUK_2 FRUK_3 GIS_1 GIS_2 GIS_3)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              130   ->   23          
+Number of variables                   4   ->   8           
+j variable (6 values)            column   ->   (dropped)
+xij variables:
+                                   cell   ->   cellFRUK_1 cellFRUK_2 ... cellGI
+> S_3
+-----------------------------------------------------------------------------
+file output/stata/Table3_POOLED_AR1.csv saved
+
+. 
+. 
+. *----------------------------------------------------------------------------
+> --
+. * 5. RESIDUAL DIAGNOSTICS (by model, residual type and country)
+. *----------------------------------------------------------------------------
+> --
+. * Two residual types for every model:
+. *   raw   = u(it), the regression residual; it is serially correlated by
+. *           construction (that is why the model has AR(1) errors);
+. *   innov = eps(it), the AR(1) innovation; if the AR(1) is adequate it
+. *           should be close to white noise. This is the main diagnostic.
+. * Statistics, computed country by country:
+. *   N, mean, sd, skewness, kurtosis;
+. *   Jarque-Bera normality test  JB = N/6 * [S^2 + (K-3)^2/4] ~ chi2(2);
+. *   Ljung-Box test of no serial correlation up to h = min(8, N/4) lags;
+. *   variance screen: N*R2 of the regression of squared residuals on the
+. *           fitted value and its square ~ chi2(2) (constant variance).
+. * All p-values are approximate (small samples, estimated parameters).
+. 
+. use `resids', clear
+
+. order model military block spec method country year fitted resid_raw resid_in
+> nov
+
+. sort model country year
+
+. export delimited using "$OUT/residuals.csv", replace
+file output/stata/residuals.csv saved
+
+. 
+. * Long format: one row per model, residual type, country and year
+. reshape long resid_, i(model country year) j(type) string
+(j = innov raw)
+
+Data                               Wide   ->   Long
+-----------------------------------------------------------------------------
+Number of observations            2,496   ->   4,992       
+Number of variables                  10   ->   10          
+j variable (2 values)                     ->   type
+xij variables:
+                  resid_innov resid_raw   ->   resid_
+-----------------------------------------------------------------------------
+
+. rename resid_ value
+
+. drop if missing(value)            // first-year innovations do not exist
+(60 observations deleted)
+
+. egen long id = group(model type country)
+
+. tempfile longres
+
+. save `longres'
+file <TEMP>\ST_2724_000008.tmp saved as .dta
+    format
+
+. 
+. tempfile diag
+
+. tempname D
+
+. postfile `D' str32 model str6 military str4 block byte spec str10 method  ///
+>     str5 type str2 country int N double(mean sd skewness kurtosis JB JB_p) //
+> /
+>     byte lags double(Q Q_p LM LM_p) using `diag', replace
+(file <TEMP>\ST_2724_000009.tmp not found)
+
+. 
+. levelsof id, local(ids)
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 3
+> 0 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 
+> 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81
+>  82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 10
+> 5 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120
+
+. foreach i of local ids {
+  2.     use `longres', clear
+  3.     keep if id == `i'
+  4.     sort year
+  5.     tsset year
+  6. 
+.     * Moments. They are stored as scalars, so that a negative skewness is
+.     * squared correctly: typing a macro such as -0.5^2 would give -0.25.
+.     quietly summarize value, detail
+  7.     scalar nobs = r(N)
+  8.     scalar mu   = r(mean)
+  9.     scalar sdev = r(sd)
+ 10.     scalar skew = r(skewness)
+ 11.     scalar kurt = r(kurtosis)
+ 12.     scalar jb   = nobs/6 * (skew^2 + (kurt - 3)^2/4)
+ 13. 
+.     * Ljung-Box portmanteau test
+.     scalar h = min(8, floor(nobs/4))
+ 14.     quietly wntestq value, lags(`=h')
+ 15.     scalar q  = r(stat)
+ 16.     scalar qp = r(p)
+ 17. 
+.     * Variance screen
+.     gen double value_sq  = value^2
+ 18.     gen double fitted_sq = fitted^2
+ 19.     quietly regress value_sq fitted fitted_sq
+ 20.     scalar lm  = e(N) * e(r2)
+ 21.     scalar lmp = chi2tail(e(df_m), lm)
+ 22. 
+.     post `D' (model[1]) (military[1]) (block[1]) (spec[1]) (method[1])  ///
+>         (type[1]) (country[1]) (nobs) (mu) (sdev) (skew) (kurt) (jb)    ///
+>         (chi2tail(2, jb)) (h) (q) (qp) (lm) (lmp)
+ 23. }
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,893 observations deleted)
+
+Time variable: year, 1986 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,892 observations deleted)
+
+Time variable: year, 1985 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,893 observations deleted)
+
+Time variable: year, 1986 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,892 observations deleted)
+
+Time variable: year, 1985 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,893 observations deleted)
+
+Time variable: year, 1986 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,892 observations deleted)
+
+Time variable: year, 1985 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,893 observations deleted)
+
+Time variable: year, 1986 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,892 observations deleted)
+
+Time variable: year, 1985 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,893 observations deleted)
+
+Time variable: year, 1986 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,892 observations deleted)
+
+Time variable: year, 1985 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,893 observations deleted)
+
+Time variable: year, 1986 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,892 observations deleted)
+
+Time variable: year, 1985 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,899 observations deleted)
+
+Time variable: year, 1992 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,889 observations deleted)
+
+Time variable: year, 1982 to 2024
+        Delta: 1 unit
+(4,898 observations deleted)
+
+Time variable: year, 1991 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+(4,888 observations deleted)
+
+Time variable: year, 1981 to 2024
+        Delta: 1 unit
+
+. postclose `D'
+
+. use `diag', clear
+
+. sort military spec block method type country
+
+. export delimited using "$OUT/diagnostics_residuals.csv", replace
+file output/stata/diagnostics_residuals.csv saved
+
+. 
+. 
+. *----------------------------------------------------------------------------
+> --
+. * 6. CORRELATION OF RESIDUALS BETWEEN COUNTRIES (common years)
+. *----------------------------------------------------------------------------
+> --
+. * Common shocks make the errors of different countries correlated in the same
+. * year. The PCSE take this correlation into account; these figures show how
+. * strong it is.
+. 
+. tempfile cross
+
+. tempname C
+
+. postfile `C' str32 model str5 type str2 country1 str2 country2 ///
+>     int N double correlation using `cross', replace
+(file <TEMP>\ST_2724_00000a.tmp not found)
+
+. 
+. use `longres', clear
+
+. egen long pair = group(model type)
+
+. tempfile pairs
+
+. save `pairs'
+file <TEMP>\ST_2724_00000b.tmp saved as .dta
+    format
+
+. levelsof pair, local(pids)
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 3
+> 0 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48
+
+. foreach i of local pids {
+  2.     use `pairs', clear
+  3.     keep if pair == `i'
+  4.     local m   = model[1]
+  5.     local typ = type[1]
+  6.     local blk = block[1]
+  7.     keep year country value
+  8.     reshape wide value, i(year) j(country) string
+  9.     if "`blk'" == "FRUK" local couples "FR-UK"
+ 10.     if "`blk'" == "GIS"  local couples "DE-ES DE-IT ES-IT"
+ 11.     foreach cp of local couples {
+ 12.         local c1 = substr("`cp'", 1, 2)
+ 13.         local c2 = substr("`cp'", 4, 2)
+ 14.         quietly correlate value`c1' value`c2'
+ 15.         post `C' ("`m'") ("`typ'") ("`c1'") ("`c2'") (r(N)) (r(rho))
+ 16.     }
+ 17. }
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,817 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              115   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,814 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              118   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,817 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              115   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,814 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              118   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,817 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              115   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,814 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              118   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,817 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              115   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,814 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              118   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,817 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              115   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,814 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              118   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,817 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              115   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,814 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              118   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,813 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              119   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,810 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              122   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,813 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              119   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,810 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              122   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,813 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              119   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,810 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              122   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,813 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              119   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,810 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              122   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,846 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               86   ->   43          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,844 observations deleted)
+(j = FR UK)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations               88   ->   44          
+Number of variables                   3   ->   3           
+j variable (2 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueFR valueUK
+-----------------------------------------------------------------------------
+(4,813 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              119   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,810 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              122   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,813 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              119   ->   43          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+(4,810 observations deleted)
+(j = DE ES IT)
+
+Data                               Long   ->   Wide
+-----------------------------------------------------------------------------
+Number of observations              122   ->   44          
+Number of variables                   3   ->   4           
+j variable (3 values)           country   ->   (dropped)
+xij variables:
+                                  value   ->   valueDE valueES valueIT
+-----------------------------------------------------------------------------
+
+. postclose `C'
+
+. use `cross', clear
+
+. sort model type country1 country2
+
+. export delimited using "$OUT/diagnostics_crosscountry.csv", replace
+file output/stata/diagnostics_crosscountry.csv saved
+
+. 
+. 
+. display as result _n "Done. Output saved in $OUT"
+
+Done. Output saved in output/stata
+
+. log close
+      name:  <unnamed>
+       log:  <ROOT>/output/stata/SCED_replication_log.txt
+  log type:  text
+ closed on:  29 Sep 2026, 08:55:38
+-------------------------------------------------------------------------------
