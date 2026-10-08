@@ -2,7 +2,7 @@
       name:  <unnamed>
        log:  <ROOT>/output/stata/SCED_replication_log.txt
   log type:  text
- opened on:  29 Sep 2026, 08:55:28
+ opened on:   8 Oct 2026, 15:59:44
 
 . 
 . 
@@ -42,7 +42,7 @@ Panel variable: pid (strongly balanced)
 . tempfile fulldata
 
 . save `fulldata'
-file <TEMP>\ST_2724_000001.tmp saved as .dta
+file <TEMP>\ST_90a4_000001.tmp saved as .dta
     format
 
 . 
@@ -130,7 +130,7 @@ file <TEMP>\ST_2724_000001.tmp saved as .dta
 . postfile `P' str32 model str6 military byte table str4 block byte spec ///
 >     str10 method str32 term double(b se z p) int(N years) double(R2 rho) ///
 >     using `coefs', replace
-(file <TEMP>\ST_2724_000002.tmp not found)
+(file <TEMP>\ST_90a4_000002.tmp not found)
 
 . 
 . * Empty file to which the residuals of every model are appended
@@ -140,7 +140,7 @@ file <TEMP>\ST_2724_000001.tmp saved as .dta
 
 . save `resids', emptyok
 (dataset contains 0 observations)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 
 . 
@@ -259,7 +259,7 @@ Log_CivGBARD |    .302143   .0595302     5.08   0.000      .185466    .4188201
          rho |   .6151543
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -295,7 +295,7 @@ Log_CivGBARD |   .1200121   .0617892     1.94   0.052    -.0010925    .2411166
          rho |   .7860526
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (14 observations deleted)
@@ -333,7 +333,7 @@ Log_CivGBARD |   .0473113   .0287964     1.64   0.100    -.0091285    .1037512
          rho |   .8217568
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (14 observations deleted)
@@ -369,7 +369,7 @@ Log_CivGBARD |   .0710418   .0200852     3.54   0.000     .0316756     .110408
          rho |   .8241269
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -406,7 +406,7 @@ Log_DefGBARD |  -.0535591   .0267304    -2.00   0.045    -.1059498   -.0011685
          rho |    .818481
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -442,7 +442,7 @@ Log_DefGBARD |  -.0495184    .027137    -1.82   0.068     -.102706    .0036692
          rho |   .8087141
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (14 observations deleted)
@@ -480,7 +480,7 @@ Log_DefGBARD |  -.0048251    .007011    -0.69   0.491    -.0185664    .0089162
          rho |   .8094031
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (14 observations deleted)
@@ -516,7 +516,7 @@ Log_DefGBARD |   .0034755   .0065145     0.53   0.594    -.0092927    .0162438
          rho |   .8732671
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -554,7 +554,7 @@ Log_DefGBARD |  -.0275771   .0225116    -1.23   0.221    -.0716989    .0165448
          rho |   .6190642
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -591,7 +591,7 @@ Log_DefGBARD |  -.0380377   .0275929    -1.38   0.168    -.0921187    .0160433
          rho |   .7814481
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (14 observations deleted)
@@ -630,7 +630,7 @@ Log_DefGBARD |  -.0071721    .007053    -1.02   0.309    -.0209957    .0066515
          rho |   .7897028
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (14 observations deleted)
@@ -667,7 +667,7 @@ Log_DefGBARD |  -.0025965   .0066438    -0.39   0.696    -.0156181     .010425
          rho |   .8261379
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -704,7 +704,7 @@ Log_CivGBARD |   .5373606   .0843443     6.37   0.000     .3720489    .7026724
          rho |   .6948628
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -740,7 +740,7 @@ Log_CivGBARD |    .348014   .0769129     4.52   0.000     .1972676    .4987605
          rho |   .7581304
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (10 observations deleted)
@@ -778,7 +778,7 @@ Log_CivGBARD |   .0982009   .0254107     3.86   0.000      .048397    .1480049
          rho |   .8226274
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (10 observations deleted)
@@ -814,7 +814,7 @@ Log_CivGBARD |   .1154441   .0233435     4.95   0.000     .0696917    .1611965
          rho |   .8351858
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -851,7 +851,7 @@ Log_DefGBARD |  -.1604701   .0347347    -4.62   0.000    -.2285488   -.0923914
          rho |   .7775561
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -887,7 +887,7 @@ Log_DefGBARD |   -.157188   .0353298    -4.45   0.000    -.2264331    -.087943
          rho |   .7741063
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (10 observations deleted)
@@ -925,7 +925,7 @@ Log_DefGBARD |  -.0032284   .0071149    -0.45   0.650    -.0171735    .0107166
          rho |   .8004453
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (10 observations deleted)
@@ -961,7 +961,7 @@ Log_DefGBARD |   .0061028    .006838     0.89   0.372    -.0072994    .0195049
          rho |   .8387031
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -999,7 +999,7 @@ Log_DefGBARD |  -.1076623   .0347147    -3.10   0.002    -.1757019   -.0396227
          rho |   .7169406
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (132 observations deleted)
 (0 observations deleted)
@@ -1036,7 +1036,7 @@ Log_DefGBARD |  -.1169137    .036182    -3.23   0.001    -.1878291   -.0459984
          rho |   .7631108
 ------------------------------------------------------------------------------
 (2 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (10 observations deleted)
@@ -1075,7 +1075,7 @@ Log_DefGBARD |  -.0097275   .0068321    -1.42   0.155    -.0231182    .0036631
          rho |   .7673898
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 (88 observations deleted)
 (10 observations deleted)
@@ -1112,7 +1112,7 @@ Log_DefGBARD |    -.00354   .0065153    -0.54   0.587    -.0163097    .0092297
          rho |   .8310867
 ------------------------------------------------------------------------------
 (3 missing values generated)
-file <TEMP>\ST_2724_000003.tmp saved as .dta
+file <TEMP>\ST_90a4_000003.tmp saved as .dta
     format
 
 . postclose `P'
@@ -1237,7 +1237,7 @@ xij variables:
                             cell1 cell2   ->   cell
 -----------------------------------------------------------------------------
 (44 real changes made)
-file <TEMP>\ST_2724_000004.tmp saved as .dta
+file <TEMP>\ST_90a4_000004.tmp saved as .dta
     format
 (212 observations deleted)
 (j = 1 2 3 4 5)
@@ -1302,7 +1302,7 @@ xij variables:
                             cell1 cell2   ->   cell
 -----------------------------------------------------------------------------
 (50 real changes made)
-file <TEMP>\ST_2724_000005.tmp saved as .dta
+file <TEMP>\ST_90a4_000005.tmp saved as .dta
     format
 (212 observations deleted)
 (j = 1 2 3 4 5)
@@ -1365,7 +1365,7 @@ xij variables:
                             cell1 cell2   ->   cell
 -----------------------------------------------------------------------------
 (44 real changes made)
-file <TEMP>\ST_2724_000006.tmp saved as .dta
+file <TEMP>\ST_90a4_000006.tmp saved as .dta
     format
 (212 observations deleted)
 (j = 1 2 3 4 5)
@@ -1430,7 +1430,7 @@ xij variables:
                             cell1 cell2   ->   cell
 -----------------------------------------------------------------------------
 (50 real changes made)
-file <TEMP>\ST_2724_000007.tmp saved as .dta
+file <TEMP>\ST_90a4_000007.tmp saved as .dta
     format
 (212 observations deleted)
 (j = 1 2 3 4 5)
@@ -1516,7 +1516,7 @@ xij variables:
 . tempfile longres
 
 . save `longres'
-file <TEMP>\ST_2724_000008.tmp saved as .dta
+file <TEMP>\ST_90a4_000008.tmp saved as .dta
     format
 
 . 
@@ -1528,7 +1528,7 @@ file <TEMP>\ST_2724_000008.tmp saved as .dta
 >     str5 type str2 country int N double(mean sd skewness kurtosis JB JB_p) //
 > /
 >     byte lags double(Q Q_p LM LM_p) using `diag', replace
-(file <TEMP>\ST_2724_000009.tmp not found)
+(file <TEMP>\ST_90a4_000009.tmp not found)
 
 . 
 . levelsof id, local(ids)
@@ -2078,7 +2078,7 @@ file output/stata/diagnostics_residuals.csv saved
 
 . postfile `C' str32 model str5 type str2 country1 str2 country2 ///
 >     int N double correlation using `cross', replace
-(file <TEMP>\ST_2724_00000a.tmp not found)
+(file <TEMP>\ST_90a4_00000a.tmp not found)
 
 . 
 . use `longres', clear
@@ -2088,7 +2088,7 @@ file output/stata/diagnostics_residuals.csv saved
 . tempfile pairs
 
 . save `pairs'
-file <TEMP>\ST_2724_00000b.tmp saved as .dta
+file <TEMP>\ST_90a4_00000b.tmp saved as .dta
     format
 
 . levelsof pair, local(pids)
@@ -2652,6 +2652,138 @@ file output/stata/diagnostics_crosscountry.csv saved
 
 . 
 . 
+. *----------------------------------------------------------------------------
+> --
+. * 7. TABLE 1: AVERAGE ANNUAL GROWTH RATES (Section 4.1 of the paper)
+. *----------------------------------------------------------------------------
+> --
+. * Same data as the regressions:
+. *   - productivity = exp(Log_MProductiv), the dependent variable in levels;
+. *   - exports in levels (millions of constant 2015 USD) = Exportman_GDP x GDP
+>  / 100,
+. *     i.e. the regression variable times GDP;
+. *   - value added (GVA_man) and employment (Emp_man).
+. * The growth rate of year t is x(t) / x(t-1) - 1. Table 1 reports, in percent
+> ,
+. * the average of the annual growth rates over 1981-2024, or over 1991-2024 fo
+> r
+. * Germany, whose employment data start in 1991. The rows GIS and FRUK are
+. * unweighted averages of the countries of each group.
+. 
+. use `fulldata', clear
+
+. gen double GVA          = GVA_man
+
+. gen double Employment   = Emp_man
+(10 missing values generated)
+
+. gen double Productivity = exp(Log_MProductiv)
+(10 missing values generated)
+
+. gen double Export       = Exportman_GDP * GDP / 100
+
+. keep if !missing(GVA, Employment, Productivity, Export)    // Germany starts 
+> in 1991
+(10 observations deleted)
+
+. sort pid year
+
+. by pid: assert year == year[_n-1] + 1 if _n > 1             // consecutive ye
+> ars only
+
+. foreach v in GVA Employment Productivity Export {
+  2.     by pid: gen double g_`v' = 100 * (`v' / `v'[_n-1] - 1) if _n > 1
+  3. }
+(5 missing values generated)
+(5 missing values generated)
+(5 missing values generated)
+(5 missing values generated)
+
+. collapse (mean) GVA=g_GVA Employment=g_Employment Productivity=g_Productivity
+>  ///
+>     Export=g_Export (min) first=year (max) last=year, by(country block)
+
+. 
+. gen str14 Country = ""
+(5 missing values generated)
+
+. replace Country = "Germany"        if country == "DE"
+(1 real change made)
+
+. replace Country = "Spain"          if country == "ES"
+(1 real change made)
+
+. replace Country = "Italy"          if country == "IT"
+(1 real change made)
+
+. replace Country = "France"         if country == "FR"
+(1 real change made)
+
+. replace Country = "United Kingdom" if country == "UK"
+(1 real change made)
+
+. gen str9 Years = string(first) + "-" + string(last)
+
+. 
+. * Group averages (unweighted)
+. preserve
+
+. collapse (mean) GVA Employment Productivity Export, by(block)
+
+. gen str14 Country = block
+
+. gen str9 Years = ""
+(2 missing values generated)
+
+. tempfile groups
+
+. save `groups'
+file <TEMP>\ST_90a4_00000d.tmp saved as .dta
+    format
+
+. restore
+
+. append using `groups'
+
+. 
+. * Order of the rows: Germany, Spain, Italy, GIS, France, United Kingdom, FRUK
+. gen byte row = 1*(Country == "Germany") + 2*(Country == "Spain") + 3*(Country
+>  == "Italy") ///
+>     + 4*(Country == "GIS") + 5*(Country == "France") + 6*(Country == "United 
+> Kingdom") ///
+>     + 7*(Country == "FRUK")
+
+. sort row
+
+. keep Country Years GVA Employment Productivity Export
+
+. order Country Years GVA Employment Productivity Export
+
+. foreach v in GVA Employment Productivity Export {
+  2.     replace `v' = round(`v', 0.01)
+  3.     format `v' %9.2f
+  4. }
+(7 real changes made)
+(7 real changes made)
+(7 real changes made)
+(7 real changes made)
+
+. list, noobs clean
+
+           Country       Years    GVA   Employ~t   Produc~y   Export  
+           Germany   1991-2024   0.51      -0.85       1.38     4.05  
+             Spain   1981-2024   0.45      -0.40       0.87     4.30  
+             Italy   1981-2024   0.15      -0.77       0.93     2.85  
+               GIS               0.37      -0.67       1.06     3.73  
+            France   1981-2024   0.35      -1.21       1.59     3.46  
+    United Kingdom   1981-2024   0.18      -1.88       2.12     0.33  
+              FRUK               0.27      -1.54       1.85     1.90  
+
+. export delimited using "$OUT/Table1_growth_rates.csv", datafmt replace
+file output/stata/Table1_growth_rates.csv saved
+
+. 
+. 
 . display as result _n "Done. Output saved in $OUT"
 
 Done. Output saved in output/stata
@@ -2660,5 +2792,5 @@ Done. Output saved in output/stata
       name:  <unnamed>
        log:  <ROOT>/output/stata/SCED_replication_log.txt
   log type:  text
- closed on:  29 Sep 2026, 08:55:38
+ closed on:   8 Oct 2026, 15:59:55
 -------------------------------------------------------------------------------

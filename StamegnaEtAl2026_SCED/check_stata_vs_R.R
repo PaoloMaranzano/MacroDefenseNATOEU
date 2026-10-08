@@ -26,7 +26,7 @@ for (f in c("Table2_FE_AR1.csv", "Table3_FE_AR1.csv",
 
 # 2. Estimates, residuals and diagnostics ----------------------------------------
 cat("Numerical results\n")
-for (f in c("estimates_long.csv", "residuals.csv",
+for (f in c("Table1_growth_rates.csv", "estimates_long.csv", "residuals.csv",
             "diagnostics_residuals.csv", "diagnostics_crosscountry.csv")) {
   s <- read.csv(file.path(dir_stata, f))
   r <- read.csv(file.path(dir_R, f))

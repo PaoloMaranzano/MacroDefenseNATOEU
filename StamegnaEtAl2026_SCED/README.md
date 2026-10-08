@@ -3,8 +3,8 @@
 Stamegna M., Maranzano P., Mombelli S., Pianta M. (2026)
 
 This folder contains the data and code needed to reproduce every table and figure in the
-empirical part of the paper: Tables 2 and 3, the robustness tables and the residual diagnostics
-of Appendix B, and Figure 5.
+empirical part of the paper: Table 1 (descriptive growth rates), Tables 2 and 3, the robustness
+tables and the residual diagnostics of Appendix B, and Figure 5.
 
 ## Contents
 
@@ -14,7 +14,7 @@ StamegnaEtAl2026_SCED/
 ├── data/
 │   └── dataset_paperSCED.dta  panel used in the paper (Stata format)
 ├── SCED_replication.R        main script: estimates, Word tables and figures
-├── SCED_replication.do       Stata version of the estimates and diagnostics (same numbers)
+├── SCED_replication.do       Stata version of Table 1, the estimates and the diagnostics (same numbers)
 ├── check_stata_vs_R.R        checks that the Stata and R results are identical
 └── output/
     ├── R/                    results of SCED_replication.R (tables, figures, csv files)
@@ -40,19 +40,25 @@ repository.
 | `Log_DefGBARD` | Government budget allocations for military R&D | log, constant 2015 USD | OECD MSTI |
 | `SocialExpenditure_ShareGDP` | Social expenditure (not used in the final specifications) | % of GDP | OECD SOCX |
 | `D0910`, `D20` | Crisis dummies: 2009–2010 and 2020–2021 | 0/1 | — |
+| `GVA_man` | Manufacturing gross value added (used only in Table 1) | millions of constant 2015 USD | OECD STAN, AMECO |
+| `Emp_man` | Manufacturing employment (used only in Table 1) | persons | OECD STAN, AMECO |
+| `GDP` | GDP (used only in Table 1) | millions of constant 2015 USD | NATO |
+
+Table 1 uses the same data as the regressions: productivity is `exp(Log_MProductiv)` and
+manufacturing exports in levels are `Exportman_GDP` × `GDP` / 100.
 
 German data start in 1991, after reunification, and Spanish military expenditure starts in 1985;
 these years are left missing. Military expenditure and GDP are observed up to 2024. For the other
 series, the most recent years that the sources do not yet cover are extrapolated by applying to the
-last observation the compound average annual growth rate of the previous ten years:
+last observation x<sub>T</sub> the compound average annual growth rate of the previous ten years,
+g = (x<sub>T</sub> / x<sub>T−10</sub>)<sup>1/10</sup> − 1, so that x<sub>T+k</sub> = x<sub>T</sub> (1 + g)<sup>k</sup>:
 
-* 2024: `Log_MProductiv`, `DefInd`, `MInvGDP`, `Log_CivGBARD` and `Log_DefGBARD` (GBARD: 2023–2024 for
-  the United Kingdom);
+* 2024: `Log_MProductiv`, `DefInd`, `MInvGDP`, `Log_CivGBARD`, `Log_DefGBARD` (GBARD: 2023–2024 for
+  the United Kingdom), `GVA_man` and `Emp_man`;
 * 2023–2024: `Exportman_GDP` (2021–2024 for the United Kingdom);
 * 2021–2024: `Importman_GDP`.
 
-For Italy, GBARD comes from a revised series, whose missing values for 2002–2004 are filled by linear
-interpolation. Table A1 of the paper reports the definition, source and coverage of every variable.
+For Italy, the missing GBARD values for 2002–2004 are filled by linear interpolation. Table A1 of the paper reports the definition, source and coverage of every variable.
 
 ## Models
 
@@ -89,8 +95,8 @@ The R script produces everything in the paper (in `output/R/`):
 
 | File | Content |
 |---|---|
-| `SCED_tables.docx` | Tables 2 and 3 (main model), then the robustness tables, one per page |
-| `figures/Figure_coefficients_military.png` | Figure 5: coefficients of the military variables, with 95% confidence intervals |
+| `SCED_tables.docx` | Table 1, Tables 2 and 3 (main model), then the robustness tables, one per page |
+| `figures/Figure_coefficients_military.png` | Figure 5: coefficients of the military variable of Tables 2 and 3 and of military R&D, with 95% confidence intervals |
 | `figures/Figure_coefficients_all.png` | Coefficients of all regressors |
 | `figures/Figure_diagnostic_tests.png` | Ljung–Box, Jarque–Bera and constant-variance tests on the AR(1) innovations |
 | `figures/Figure_diagnostics_*.png` | Residual diagnostics for each table and model: innovations over time, autocorrelation functions and normal Q–Q plots |
@@ -99,6 +105,7 @@ Both scripts write the same numerical results (in `output/R/` and `output/stata/
 
 | File | Content |
 |---|---|
+| `Table1_growth_rates.csv` | Table 1: average annual growth rates of manufacturing value added, employment, labour productivity and exports, 1981–2024 (Germany 1991–2024) |
 | `Table2_*.csv`, `Table3_*.csv` | Formatted tables |
 | `estimates_long.csv` | All coefficients (country intercepts included) with standard errors, z, p-values, N, ρ and R² |
 | `residuals.csv` | Fitted values, residuals and AR(1) innovations |

@@ -2,7 +2,7 @@
   Military deindustrialisation and economic performance in Europe
   Stamegna M., Maranzano P., Mombelli S., Pianta M.
 
-  REPLICATION SCRIPT (Stata): Tables 2 and 3 and residual diagnostics
+  REPLICATION SCRIPT (Stata): Tables 1, 2 and 3 and residual diagnostics
   ------------------------------------------------------------------------------
   File       : SCED_replication.do
   Companion  : SCED_replication.R  (same steps, same numbers)
@@ -47,6 +47,7 @@
   check_stata_vs_R.R verifies that the two sets of results are identical.
 
   OUTPUT (folder output/stata)
+     Table1_growth_rates.csv     Table 1: average annual growth rates (section 7)
      Table2_FE_AR1.csv, Table2_POOLED_AR1.csv   formatted Table 2
      Table3_FE_AR1.csv, Table3_POOLED_AR1.csv   formatted Table 3
      estimates_long.csv          every coefficient with SE, z, p-value, N, rho, R2
@@ -434,6 +435,66 @@ postclose `C'
 use `cross', clear
 sort model type country1 country2
 export delimited using "$OUT/diagnostics_crosscountry.csv", replace
+
+
+*------------------------------------------------------------------------------
+* 7. TABLE 1: AVERAGE ANNUAL GROWTH RATES (Section 4.1 of the paper)
+*------------------------------------------------------------------------------
+* Same data as the regressions:
+*   - productivity = exp(Log_MProductiv), the dependent variable in levels;
+*   - exports in levels (millions of constant 2015 USD) = Exportman_GDP x GDP / 100,
+*     i.e. the regression variable times GDP;
+*   - value added (GVA_man) and employment (Emp_man).
+* The growth rate of year t is x(t) / x(t-1) - 1. Table 1 reports, in percent,
+* the average of the annual growth rates over 1981-2024, or over 1991-2024 for
+* Germany, whose employment data start in 1991. The rows GIS and FRUK are
+* unweighted averages of the countries of each group.
+
+use `fulldata', clear
+gen double GVA          = GVA_man
+gen double Employment   = Emp_man
+gen double Productivity = exp(Log_MProductiv)
+gen double Export       = Exportman_GDP * GDP / 100
+keep if !missing(GVA, Employment, Productivity, Export)    // Germany starts in 1991
+sort pid year
+by pid: assert year == year[_n-1] + 1 if _n > 1             // consecutive years only
+foreach v in GVA Employment Productivity Export {
+    by pid: gen double g_`v' = 100 * (`v' / `v'[_n-1] - 1) if _n > 1
+}
+collapse (mean) GVA=g_GVA Employment=g_Employment Productivity=g_Productivity ///
+    Export=g_Export (min) first=year (max) last=year, by(country block)
+
+gen str14 Country = ""
+replace Country = "Germany"        if country == "DE"
+replace Country = "Spain"          if country == "ES"
+replace Country = "Italy"          if country == "IT"
+replace Country = "France"         if country == "FR"
+replace Country = "United Kingdom" if country == "UK"
+gen str9 Years = string(first) + "-" + string(last)
+
+* Group averages (unweighted)
+preserve
+collapse (mean) GVA Employment Productivity Export, by(block)
+gen str14 Country = block
+gen str9 Years = ""
+tempfile groups
+save `groups'
+restore
+append using `groups'
+
+* Order of the rows: Germany, Spain, Italy, GIS, France, United Kingdom, FRUK
+gen byte row = 1*(Country == "Germany") + 2*(Country == "Spain") + 3*(Country == "Italy") ///
+    + 4*(Country == "GIS") + 5*(Country == "France") + 6*(Country == "United Kingdom") ///
+    + 7*(Country == "FRUK")
+sort row
+keep Country Years GVA Employment Productivity Export
+order Country Years GVA Employment Productivity Export
+foreach v in GVA Employment Productivity Export {
+    replace `v' = round(`v', 0.01)
+    format `v' %9.2f
+}
+list, noobs clean
+export delimited using "$OUT/Table1_growth_rates.csv", datafmt replace
 
 
 display as result _n "Done. Output saved in $OUT"

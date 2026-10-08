@@ -2,12 +2,9 @@
 #  Military deindustrialisation and economic performance in Europe
 #  Stamegna M., Maranzano P., Mombelli S., Pianta M.
 #
-#  REPLICATION SCRIPT (R): Tables 2 and 3 and residual diagnostics
+#  REPLICATION SCRIPT: Tables 1, 2 and 3, Figure 5 and residual diagnostics
 #  ---------------------------------------------------------------------------
-#  File       : SCED_replication.R
-#  Companion  : SCED_replication.do  (same steps, same numbers)
 #  Data       : data/dataset_paperSCED.dta  (FR, DE, IT, ES, UK; 1981-2024)
-#  Software   : R 4.x. Only the package 'haven' (to read the Stata file).
 #
 #  WHAT IS ESTIMATED
 #  Dependent variable: log manufacturing labour productivity (Log_MProductiv).
@@ -21,7 +18,8 @@
 #     GIS  = Germany, Italy and Spain
 #
 #  Three specifications (table columns), which differ only in the R&D controls:
-#     (1) civilian government R&D      (2) military government R&D
+#     (1) civilian government R&D
+#     (2) military government R&D
 #     (3) civilian + military R&D
 #  Every specification also contains manufacturing exports, imports and
 #  investment (% of GDP) and two crisis dummies (2009-2010 and 2020-2021).
@@ -31,8 +29,7 @@
 #     POOLED_AR1  ROBUSTNESS : one common intercept  + AR(1) errors
 #  Both are Prais-Winsten estimates with panel-corrected standard errors
 #  (PCSE; Beck and Katz, 1995). The function pw_pcse() below codes, step by
-#  step, what Stata's xtpcse ..., correlation(ar1) does,
-#  and reproduces its results exactly:
+#  step, what Stata's xtpcse ..., correlation(ar1) does:
 #     - one AR(1) coefficient (rho) common to the countries of a group;
 #     - PCSE allow each country to have its own error variance and the
 #       errors of different countries to be correlated in the same year;
@@ -43,17 +40,16 @@
 #  All intercepts are saved in estimates_long.csv.
 #
 #  OUTPUT (folder output/R)
-#     SCED_tables.docx            Tables 2 and 3 (FE and pooled) in one Word file
+#     SCED_tables.docx            Table 1 and Tables 2 and 3 (FE and pooled) in one Word file
+#     Table1_growth_rates.csv     Table 1: average annual growth rates (section 7.1)
 #     figures/                    diagnostic figures (section 8) and
-#                                 coefficient figures (section 9)
+#                                 coefficient figures (section 9; Figure 5)
 #     Table2_FE_AR1.csv, Table2_POOLED_AR1.csv   formatted Table 2
 #     Table3_FE_AR1.csv, Table3_POOLED_AR1.csv   formatted Table 3
 #     estimates_long.csv          every coefficient with SE, z, p-value, N, rho, R2
 #     residuals.csv               fitted values, residuals and AR(1) innovations
 #     diagnostics_residuals.csv   residual diagnostics by model and country
 #     diagnostics_crosscountry.csv  correlation of residuals between countries
-#
-#  HOW TO RUN: set the working directory in section 0, then source the file.
 ###############################################################################
 
 
@@ -93,6 +89,7 @@ d$FE_ES <- as.numeric(d$country == "ES")
 d$FE_IT <- as.numeric(d$country == "IT")
 
 
+
 #------------------------------------------------------------------------------
 # 2. MODEL SET-UP
 #------------------------------------------------------------------------------
@@ -123,6 +120,7 @@ labels <- c(
   D20                        = "Crisis indicator: 2020-2021",
   `_cons`                    = "Constant"
 )
+
 
 
 #------------------------------------------------------------------------------
@@ -268,6 +266,7 @@ coefs <- coefs[order(coefs$table, coefs$method, coefs$block, coefs$spec), ]
 write.csv(coefs, file.path(OUT, "estimates_long.csv"), row.names = FALSE)
 
 
+
 #------------------------------------------------------------------------------
 # 4. FORMATTED TABLES 2 AND 3
 #------------------------------------------------------------------------------
@@ -322,6 +321,7 @@ for (table in 2:3) {
               row.names = FALSE, quote = FALSE)
   }
 }
+
 
 
 #------------------------------------------------------------------------------
@@ -386,6 +386,7 @@ diag <- diag[order(diag$military, diag$spec, diag$block, diag$method,
 write.csv(diag, file.path(OUT, "diagnostics_residuals.csv"), row.names = FALSE)
 
 
+
 #------------------------------------------------------------------------------
 # 6. CORRELATION OF RESIDUALS BETWEEN COUNTRIES (common years)
 #------------------------------------------------------------------------------
@@ -416,11 +417,54 @@ cross <- cross[order(cross$model, cross$type, cross$country1, cross$country2), ]
 write.csv(cross, file.path(OUT, "diagnostics_crosscountry.csv"), row.names = FALSE)
 
 
+
 #------------------------------------------------------------------------------
 # 7. PAPER OUTPUT: ALL TABLES IN ONE WORD FILE (output/R/SCED_tables.docx)
 #------------------------------------------------------------------------------
-# Order: main model (FE) for Tables 2 and 3, then the pooled robustness check.
-# Each table is read back from its csv file and written with officer/flextable.
+# Order: Table 1 (descriptive), main model (FE) for Tables 2 and 3, then the
+# pooled robustness check. Each table is written with officer/flextable.
+
+# 7.1 Table 1: average annual growth rates of manufacturing value added,
+#     employment, labour productivity and exports (Section 4.1 of the paper)
+# The data are those of the regressions:
+#   - productivity = exp(Log_MProductiv), the dependent variable in levels;
+#   - exports in levels (millions of constant 2015 USD) = Exportman_GDP x GDP / 100,
+#     i.e. the regression variable times GDP: in the observed years this is
+#     exactly the export series of the source, in the extrapolated years it is
+#     the extrapolated export share of the regressions;
+#   - value added (GVA_man, millions of constant 2015 USD) and employment
+#     (Emp_man, persons), from the same panel as the regression variables.
+# The growth rate of year t is x(t) / x(t-1) - 1. Table 1 reports, in percent,
+# the average of the annual growth rates over 1981-2024, or over 1991-2024 for
+# Germany, whose employment data start in 1991. The rows GIS and FRUK are
+# unweighted averages of the countries of each group.
+t1_data <- data.frame(country      = d$country,
+                      year         = d$year,
+                      GVA          = d$GVA_man,
+                      Employment   = d$Emp_man,
+                      Productivity = exp(d$Log_MProductiv),
+                      Export       = d$Exportman_GDP * d$GDP / 100)
+t1_data <- t1_data[complete.cases(t1_data), ]     # Germany starts in 1991
+t1_vars <- c("GVA", "Employment", "Productivity", "Export")
+mean_growth <- function(x) 100 * mean(x[-1] / x[-length(x)] - 1)
+
+t1_countries <- c(DE = "Germany", ES = "Spain", IT = "Italy",
+                  FR = "France", UK = "United Kingdom")
+t1 <- do.call(rbind, lapply(names(t1_countries), function(cc) {
+  x <- t1_data[t1_data$country == cc, ]           # rows sorted by year
+  stopifnot(all(diff(x$year) == 1))               # consecutive years only
+  data.frame(Country = t1_countries[[cc]],
+             Years   = paste0(min(x$year), "-", max(x$year)),
+             t(sapply(x[t1_vars], mean_growth)))
+}))
+group_mean <- function(rows, name)
+  data.frame(Country = name, Years = "", t(colMeans(t1[rows, t1_vars])))
+t1 <- rbind(t1[1:3, ], group_mean(1:3, "GIS"),    # Germany, Spain, Italy
+            t1[4:5, ], group_mean(4:5, "FRUK"))   # France, United Kingdom
+t1[t1_vars] <- round(t1[t1_vars], 2)
+write.csv(t1, file.path(OUT, "Table1_growth_rates.csv"), row.names = FALSE)
+
+# 7.2 Tables 2 and 3
 
 titles <- c(
   "2_FE_AR1"     = "Table 2. Military expenditure and manufacturing labour productivity: country fixed effects with AR(1) errors (main model)",
@@ -440,11 +484,28 @@ txt <- function(x, size = 10, bold = FALSE)      # a paragraph in Times New Roma
   fpar(ftext(x, fp_text(font.family = "Times New Roman", font.size = size, bold = bold)))
 
 doc <- read_docx()
-doc <- body_add_fpar(doc, txt("SCED: regression tables", size = 14, bold = TRUE))
+doc <- body_add_fpar(doc, txt("SCED: tables", size = 14, bold = TRUE))
 doc <- body_add_fpar(doc, txt(paste("Generated by SCED_replication.R. Main model: country fixed",
   "effects with AR(1) errors. Robustness: pooled model with AR(1) errors.")))
 
-first <- TRUE
+# Table 1 first
+t1_print <- t1
+t1_print[t1_vars] <- lapply(t1_print[t1_vars], sprintf, fmt = "%.2f")
+ft1 <- flextable(t1_print)
+ft1 <- theme_booktabs(ft1)
+ft1 <- font(ft1, fontname = "Times New Roman", part = "all")
+ft1 <- fontsize(ft1, size = 9, part = "all")
+ft1 <- align(ft1, j = 3:6, align = "center", part = "all")
+ft1 <- bold(ft1, i = c(4, 7), part = "body")      # group averages
+doc <- body_add_fpar(doc, txt(paste("Table 1. Average annual growth rates of selected",
+                                    "manufacturing indicators, 1981-2024 (%)"), bold = TRUE))
+doc <- body_add_flextable(doc, ft1)
+doc <- body_add_fpar(doc, txt(paste("Notes: averages of the annual growth rates over the",
+  "years shown (Germany: 1991-2024), from the data of the regressions; productivity is",
+  "exp(Log_MProductiv), exports are Exportman_GDP x GDP / 100. GIS and FRUK are",
+  "unweighted averages of the countries."), size = 8))
+
+first <- FALSE                                    # page break before Table 2
 for (method in c("FE_AR1", "POOLED_AR1")) {
   for (table in 2:3) {
     tab <- read.csv(file.path(OUT, paste0("Table", table, "_", method, ".csv")),
@@ -482,6 +543,7 @@ doc <- body_set_default_section(doc, prop_section(
 tryCatch(print(doc, target = file.path(OUT, "SCED_tables.docx")),
          error = function(e) warning("SCED_tables.docx not updated: close it in ",
                                      "Word and run the script again."))
+
 
 
 #------------------------------------------------------------------------------
@@ -641,6 +703,7 @@ ggsave(file.path(OUT, "figures", "Figure_diagnostic_tests.png"), p_tests,
        width = 12, height = 7.5, dpi = 200, bg = "white")
 
 
+
 #------------------------------------------------------------------------------
 # 9. PAPER OUTPUT: COEFFICIENT FIGURES (ggplot2, folder output/R/figures)
 #------------------------------------------------------------------------------
@@ -664,8 +727,8 @@ cf$sig   <- factor(ifelse(cf$p < .05, "Significant at 5%", "Not significant at 5
                    levels = c("Significant at 5%", "Not significant at 5%"))
 cf$spec  <- factor(cf$spec, levels = 1:3)
 cf$group <- factor(group_names[cf$block], levels = group_names)
-cf$table_label <- factor(ifelse(cf$table == 2, "Table 2\nMilitary expenditure / GDP",
-                                "Table 3\nMilitary VA / manufacturing VA"))
+cf$table_label <- factor(ifelse(cf$table == 2, "Table 2\nMilitary expenditure\n(% of GDP)",
+                                "Table 3\nMilitary VA (% of\nmanufacturing VA)"))
 # One row per regressor; the two military variables share the first row
 cf$term_label <- ifelse(cf$term %in% c("DefGDP", "DefInd"), "Military variable",
                         labels[cf$term])
@@ -686,16 +749,34 @@ coef_layers <- list(
   theme_paper,
   theme(legend.box = "horizontal"))                   # both legends on one row
 
-# (a) Military variable only: rows = tables, columns = country groups
+# (a) Military variables only (Figure 5 of the paper); columns = country groups.
+#     Rows 1-2: the military variable of Table 2 and of Table 3, by specification.
+#     Row 3   : military R&D, which enters specifications (2) and (3) of both
+#               tables; the x axis shows specification and table.
 p_mil <- ggplot(cf[cf$term_label == "Military variable", ],
                 aes(spec, b, colour = method, shape = sig, group = method)) +
   coef_layers +
+  scale_x_discrete(drop = FALSE, labels = function(s) paste0("(", s, ")")) +
   facet_grid(table_label ~ group, scales = "free_y") +
   labs(title = "Military variables and manufacturing labour productivity",
        subtitle = "Estimates and 95% confidence intervals (panel-corrected standard errors)",
        x = "Specification", y = "Coefficient")
-ggsave(file.path(OUT, "figures", "Figure_coefficients_military.png"), p_mil,
-       width = 10, height = 7, dpi = 200, bg = "white")
+
+cf_rd <- cf[cf$term == "Log_DefGBARD", ]
+cf_rd$x <- factor(paste0("(", cf_rd$spec, ")\nTable ", cf_rd$table),
+                  levels = c("(2)\nTable 2", "(3)\nTable 2", "(2)\nTable 3", "(3)\nTable 3"))
+cf_rd$row_label <- "Military R&D (log)\nTables 2 and 3"
+p_rd <- ggplot(cf_rd, aes(x, b, colour = method, shape = sig, group = method)) +
+  coef_layers +
+  facet_grid(row_label ~ group) +
+  theme(strip.text.x = element_blank()) +          # group names are already above
+  labs(x = "Specification and table", y = "Coefficient")
+
+# The two parts share the legend; align = "v" keeps the panels aligned
+fig5 <- ggarrange(p_mil, p_rd, ncol = 1, heights = c(2.15, 1), align = "v",
+                  common.legend = TRUE, legend = "bottom")
+ggsave(file.path(OUT, "figures", "Figure_coefficients_military.png"), fig5,
+       width = 10, height = 7.8, dpi = 200, bg = "white")
 
 # (b) All regressors: rows = regressors, columns = table x country group
 cf$column <- factor(paste0(ifelse(cf$table == 2, "Table 2", "Table 3"), "\n", cf$group),
